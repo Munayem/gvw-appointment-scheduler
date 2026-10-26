@@ -1,0 +1,42 @@
+name: Deploy to WordPress.org
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SVN_URL: https://plugins.svn.wordpress.org/gvw-appointment-scheduler
+      ZIP_URL: https://wordpress.org/plugins/files/2026/10/21_21-59-05_gvw-appointment-scheduler.zip
+      ZIP_SHA256: 4d8f978f46c63e14c9c0da5628f3806361dff70ac595a2b001698069778a63fd
+      VERSION: 1.0.1
+    steps:
+      - name: Install Subversion
+        run: sudo apt-get update -y && sudo apt-get install -y subversion unzip rsync
+
+      - name: Download approved plugin zip
+        run: |
+          curl -fsSL "$ZIP_URL" -o plugin.zip
+          echo "$ZIP_SHA256  plugin.zip" | sha256sum -c -
+          unzip -q plugin.zip -d src
+          ls src/gvw-appointment-scheduler
+
+      - name: Checkout SVN
+        run: svn checkout "$SVN_URL" svn
+
+      - name: Copy files to trunk and tag
+        run: |
+          rsync -rc --delete src/gvw-appointment-scheduler/ svn/trunk/
+          cd svn
+          svn add --force trunk > /dev/null
+          if [ ! -d "tags/$VERSION" ]; then svn cp trunk "tags/$VERSION"; fi
+          svn status
+
+      - name: Commit to WordPress.org
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+        run: |
+          cd svn
+          svn commit -m "Release $VERSION" --no-auth-cache --non-interactive --username "$SVN_USERNAME" --password "$SVN_PASSWORD"
